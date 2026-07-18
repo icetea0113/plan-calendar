@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plan-calendar-v1';
+const CACHE_NAME = 'plan-calendar-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -40,4 +40,3 @@ self.addEventListener('fetch', event => {
     ))
   );
 });
-
