@@ -13,6 +13,153 @@
     });
   }
 </script>
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+  import {
+    getAuth,
+    GoogleAuthProvider,
+    signInWithPopup,
+    signInWithRedirect,
+    getRedirectResult,
+    onAuthStateChanged,
+    signOut
+  } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
+  import {
+    initializeFirestore,
+    persistentLocalCache,
+    doc,
+    getDoc,
+    setDoc
+  } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCSkVVTqhBpaDUDTxmxkDTyyfvtEIvyBi4",
+    authDomain: "plan-calendar-d49fc.firebaseapp.com",
+    projectId: "plan-calendar-d49fc",
+    storageBucket: "plan-calendar-d49fc.firebasestorage.app",
+    messagingSenderId: "52113565939",
+    appId: "1:52113565939:web:a3c1ae95760c5f229d6f86"
+  };
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const bridge = window.planCalendarFirebaseBridge;
+    if (!bridge) return;
+    if (location.protocol === 'file:') {
+      bridge.showFileMode();
+      return;
+    }
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = initializeFirestore(app, { localCache: persistentLocalCache() });
+    const provider = new GoogleAuthProvider();
+    let currentUser = null;
+    let pushTimer = null;
+    let pushing = false;
+    let pushQueued = false;
+
+    const calendarRef = user => doc(db, 'users', user.uid, 'data', 'calendar');
+    const syncedLabel = () => `동기화됨 · ${new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
+    const isRemoteData = data => data && typeof data.updatedAt === 'string'
+      && Number.isFinite(Date.parse(data.updatedAt))
+      && Array.isArray(data.plans) && Array.isArray(data.events);
+
+    async function pushData() {
+      clearTimeout(pushTimer);
+      if (!currentUser) return;
+      if (pushing) {
+        pushQueued = true;
+        return;
+      }
+
+      pushing = true;
+      const userId = currentUser.uid;
+      const payload = bridge.ensureLocalTimestamp();
+      const pushedAt = payload.updatedAt;
+      bridge.setStatus('동기화 중…');
+      try {
+        await setDoc(calendarRef(currentUser), payload);
+        if (!currentUser || currentUser.uid !== userId) return;
+        bridge.setStatus(syncedLabel());
+      } catch (error) {
+        console.warn('Firestore 동기화가 보류되었습니다.', error);
+        bridge.setStatus('동기화 대기 중');
+      } finally {
+        pushing = false;
+        if (pushQueued || bridge.getLocalData().updatedAt !== pushedAt) {
+          pushQueued = false;
+          schedulePush();
+        }
+      }
+    }
+
+    function schedulePush() {
+      if (!currentUser) return;
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(pushData, 2000);
+    }
+
+    async function reconcile(user) {
+      bridge.setStatus('동기화 중…');
+      try {
+        const snapshot = await getDoc(calendarRef(user));
+        const remote = snapshot.exists() ? snapshot.data() : null;
+        const local = bridge.getLocalData();
+        const remoteTime = isRemoteData(remote) ? Date.parse(remote.updatedAt) : 0;
+        const localTime = Date.parse(local.updatedAt) || 0;
+
+        // ponytail: LWW 동기화, 병합 필요해지면 항목 단위 merge로 업그레이드
+        if (remoteTime > localTime) {
+          bridge.applyRemoteData(remote);
+        } else if (!snapshot.exists() || !isRemoteData(remote) || localTime > remoteTime) {
+          await setDoc(calendarRef(user), bridge.ensureLocalTimestamp());
+        }
+        bridge.setStatus(syncedLabel());
+      } catch (error) {
+        console.warn('Firestore 초기 동기화를 완료하지 못했습니다.', error);
+        bridge.setStatus('동기화 대기 중');
+      }
+    }
+
+    async function login() {
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (error) {
+        console.warn('Google 로그인 팝업을 사용할 수 없어 리디렉션으로 전환합니다.', error);
+        await signInWithRedirect(auth, provider);
+      }
+    }
+
+    document.getElementById('googleLoginBtn').addEventListener('click', () => {
+      login().catch(error => {
+        console.warn('Google 로그인에 실패했습니다.', error);
+        bridge.setStatus('로그인 오류 — 다시 시도하세요', true);
+      });
+    });
+    document.getElementById('googleLogoutBtn').addEventListener('click', () => {
+      signOut(auth).catch(error => {
+        console.warn('Google 로그아웃에 실패했습니다.', error);
+        bridge.setStatus('로그아웃 오류 — 다시 시도하세요', true);
+      });
+    });
+
+    window.planCalendarFirebaseSync = { schedulePush };
+    getRedirectResult(auth).catch(error => {
+      console.warn('Google 리디렉션 로그인에 실패했습니다.', error);
+      bridge.setStatus('로그인 오류 — 다시 시도하세요', true);
+    });
+    onAuthStateChanged(auth, user => {
+      currentUser = user;
+      clearTimeout(pushTimer);
+      if (!user) {
+        bridge.showSignedOut();
+        return;
+      }
+      bridge.showSignedIn(user.email || 'Google 사용자');
+      reconcile(user);
+    });
+  });
+</script>
 <title>계획 캘린더</title>
 <style>
   :root {
@@ -179,10 +326,11 @@
   .sync-indicator { width: 7px; height: 7px; border-radius: 50%; background: #afb8c1; }
   .sync-indicator.connected { background: #3f9f70; }
   .sync-indicator.error { background: var(--danger); }
-  .sync-connect-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
-  .sync-connect-row input { min-width: 0; height: 30px !important; padding: 5px 8px !important; font-size: 11px; }
-  .sync-connect-row .btn, .sync-actions .btn { min-height: 30px; padding: 4px 9px; font-size: 11px; }
-  .sync-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+  .firebase-file-notice { padding: 7px 8px; border-radius: 6px; background: var(--surface-subtle); color: var(--muted); font-size: 10px; line-height: 1.5; }
+  #googleLoginBtn { width: 100%; min-height: 30px; font-size: 11px; }
+  .firebase-user-row { display: flex; align-items: center; gap: 7px; }
+  .firebase-email { min-width: 0; flex: 1; overflow: hidden; color: var(--text-subtle); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  #googleLogoutBtn { min-height: 28px; padding: 3px 8px; font-size: 10px; }
   .sync-status { min-height: 16px; margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.45; }
   .sync-status.error { color: var(--danger); font-weight: 600; }
   .sidebar-utilities {
@@ -420,20 +568,22 @@
       <div id="eventList"></div>
     </section>
   </div>
-  <section class="sync-section" aria-label="GitHub Gist 동기화">
+  <section class="sync-section" aria-label="Firebase 동기화">
     <div class="sync-heading">
       <span id="syncIndicator" class="sync-indicator" aria-hidden="true"></span>
       <span>동기화</span>
     </div>
-    <div id="syncConnectControls" class="sync-connect-row">
-      <input id="syncToken" type="password" autocomplete="off" placeholder="GitHub 토큰" aria-label="GitHub 토큰">
-      <button id="syncConnectBtn" class="btn" type="button">연결</button>
+    <div id="firebaseFileNotice" class="firebase-file-notice" hidden>동기화는 앱/웹 버전에서 사용됩니다</div>
+    <div id="firebaseSignedOut" hidden>
+      <button id="googleLoginBtn" class="btn" type="button">Google로 로그인</button>
     </div>
-    <div id="syncConnectedControls" class="sync-actions" hidden>
-      <button id="syncNowBtn" class="btn" type="button">지금 동기화</button>
-      <button id="syncDisconnectBtn" class="btn btn-danger" type="button">연결 해제</button>
+    <div id="firebaseSignedIn" hidden>
+      <div class="firebase-user-row">
+        <span id="firebaseEmail" class="firebase-email"></span>
+        <button id="googleLogoutBtn" class="btn btn-danger" type="button">로그아웃</button>
+      </div>
     </div>
-    <div id="syncStatus" class="sync-status" aria-live="polite">연결되지 않음</div>
+    <div id="firebaseSyncStatus" class="sync-status" aria-live="polite"></div>
   </section>
   <div class="sidebar-utilities" aria-label="데이터 관리">
     <button id="exportBtn" class="btn" type="button">내보내기</button>
@@ -507,9 +657,7 @@ const EVENT_STORE_KEY = 'planCalendarEvents';
 const HOLIDAY_PREF_KEY = 'planCalendarShowHolidays';
 const HOLIDAY_CACHE_KEY = 'planCalendarHolidayCache';
 const HOLIDAY_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
-const SYNC_KEY = 'planCalendarSync';
-const GIST_DESCRIPTION = 'plan-calendar-sync';
-const GIST_FILE = 'data.json';
+const FIREBASE_META_KEY = 'planCalendarFirebaseMeta';
 const DOW = ['일','월','화','수','목','금','토'];
 const CHIP_LIMIT = 3;
 
@@ -539,11 +687,7 @@ let plans = loadPlans();
 let personalEvents = loadEvents();
 const holidayCache = loadHolidayCache();
 const holidayFetches = new Set();
-let syncConfig = loadSyncConfig();
-let syncTimer = null;
-let syncPushing = false;
-let syncPushQueued = false;
-let syncTokenError = false;
+let firebaseMeta = loadFirebaseMeta();
 let showHolidays = localStorage.getItem(HOLIDAY_PREF_KEY) !== 'false';
 let viewYear, viewMonth;
 let openPlanId = null;
@@ -587,18 +731,18 @@ function loadHolidayCache() {
   }
 }
 
-function loadSyncConfig() {
+function loadFirebaseMeta() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(SYNC_KEY) || '{}');
+    const parsed = JSON.parse(localStorage.getItem(FIREBASE_META_KEY) || '{}');
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
   } catch (error) {
-    console.warn('동기화 설정을 불러오지 못했습니다.', error);
+    console.warn('Firebase 동기화 메타데이터를 불러오지 못했습니다.', error);
     return {};
   }
 }
 
-function saveSyncConfig() {
-  localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig));
+function saveFirebaseMeta() {
+  localStorage.setItem(FIREBASE_META_KEY, JSON.stringify(firebaseMeta));
 }
 
 function getHolidayName(key) {
@@ -635,233 +779,73 @@ async function refreshHolidays(year) {
   }
 }
 
-function syncAgeText(iso) {
-  const elapsed = Date.now() - Date.parse(iso);
-  if (!Number.isFinite(elapsed) || elapsed < 60000) return '방금 전';
-  const minutes = Math.floor(elapsed / 60000);
-  if (minutes < 60) return `${minutes}분 전`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours}시간 전` : `${Math.floor(hours / 24)}일 전`;
-}
-
-function setSyncStatus(message, isError = false) {
-  const status = document.getElementById('syncStatus');
+function setFirebaseStatus(message, isError = false) {
+  const status = document.getElementById('firebaseSyncStatus');
   const indicator = document.getElementById('syncIndicator');
   status.textContent = message;
   status.classList.toggle('error', isError);
-  indicator.className = `sync-indicator${isError ? ' error' : syncConfig.token && syncConfig.gistId ? ' connected' : ''}`;
+  indicator.className = `sync-indicator${isError ? ' error' : document.getElementById('firebaseSignedIn').hidden ? '' : ' connected'}`;
 }
 
-function renderSyncUI() {
-  const connected = Boolean(syncConfig.token && syncConfig.gistId && !syncTokenError);
-  document.getElementById('syncConnectControls').hidden = connected;
-  document.getElementById('syncConnectedControls').hidden = !connected;
-  document.getElementById('syncToken').value = connected ? '' : (syncConfig.token || '');
-  if (syncTokenError) {
-    setSyncStatus('토큰 오류 — 다시 연결하세요', true);
-  } else if (connected) {
-    setSyncStatus(syncConfig.lastSyncedAt ? `동기화됨 · ${syncAgeText(syncConfig.lastSyncedAt)}` : '연결됨');
-  } else {
-    setSyncStatus('연결되지 않음');
+function showFirebaseFileMode() {
+  document.getElementById('firebaseFileNotice').hidden = false;
+  document.getElementById('firebaseSignedOut').hidden = true;
+  document.getElementById('firebaseSignedIn').hidden = true;
+  document.getElementById('firebaseSyncStatus').textContent = '';
+  document.getElementById('syncIndicator').className = 'sync-indicator';
+}
+
+function showFirebaseSignedOut() {
+  document.getElementById('firebaseFileNotice').hidden = true;
+  document.getElementById('firebaseSignedOut').hidden = false;
+  document.getElementById('firebaseSignedIn').hidden = true;
+  document.getElementById('firebaseEmail').textContent = '';
+  setFirebaseStatus('Google 로그인 필요');
+}
+
+function showFirebaseSignedIn(email) {
+  document.getElementById('firebaseFileNotice').hidden = true;
+  document.getElementById('firebaseSignedOut').hidden = true;
+  document.getElementById('firebaseSignedIn').hidden = false;
+  document.getElementById('firebaseEmail').textContent = email;
+  setFirebaseStatus('동기화 중…');
+}
+
+function firebasePayload(ensureTimestamp = false) {
+  if (ensureTimestamp && !firebaseMeta.updatedAt) {
+    firebaseMeta.updatedAt = new Date().toISOString();
+    saveFirebaseMeta();
   }
+  return { version: 1, updatedAt: firebaseMeta.updatedAt || '', plans, events: personalEvents };
 }
 
-function markSyncTokenError() {
-  syncTokenError = true;
-  clearTimeout(syncTimer);
-  renderSyncUI();
-}
-
-async function githubRequest(path, options = {}, token = syncConfig.token) {
-  const url = path.startsWith('http') ? path : `https://api.github.com${path}`;
-  const { headers = {}, ...requestOptions } = options;
-  const response = await fetch(url, {
-    ...requestOptions,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/vnd.github+json',
-      ...headers
-    }
-  });
-  if (response.status === 401 || response.status === 403) {
-    markSyncTokenError();
-    const error = new Error('GitHub token error');
-    error.tokenError = true;
-    throw error;
-  }
-  if (!response.ok) throw new Error(`GitHub API ${response.status}`);
-  return response.status === 204 ? null : response.json();
-}
-
-function syncPayload() {
-  if (!syncConfig.updatedAt) {
-    syncConfig.updatedAt = new Date().toISOString();
-    saveSyncConfig();
-  }
-  return { version: 1, updatedAt: syncConfig.updatedAt, plans, events: personalEvents };
-}
-
-function markLocalChange() {
-  syncConfig.updatedAt = new Date().toISOString();
-  saveSyncConfig();
-  scheduleSyncPush();
-}
-
-function scheduleSyncPush() {
-  if (!syncConfig.token || !syncConfig.gistId || syncTokenError) return;
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(pushSyncData, 2000);
-}
-
-async function readGistData(gist) {
-  const file = gist?.files?.[GIST_FILE];
-  if (!file) return null;
-  try {
-    if (file.truncated && file.raw_url) return await githubRequest(file.raw_url);
-    return JSON.parse(file.content);
-  } catch (error) {
-    if (error.tokenError) throw error;
-    console.warn('원격 동기화 데이터를 읽지 못했습니다.', error);
-    return null;
-  }
-}
-
-function isSyncData(data) {
-  return data && typeof data.updatedAt === 'string' && Number.isFinite(Date.parse(data.updatedAt))
-    && Array.isArray(data.plans) && Array.isArray(data.events);
-}
-
-function applyRemoteData(data) {
+function applyFirebaseRemoteData(data) {
   localStorage.setItem(STORE_KEY, JSON.stringify(data.plans));
   localStorage.setItem(EVENT_STORE_KEY, JSON.stringify(data.events));
   plans = data.plans;
   personalEvents = data.events;
-  syncConfig.updatedAt = data.updatedAt;
-  syncConfig.lastSyncedAt = new Date().toISOString();
-  saveSyncConfig();
+  firebaseMeta.updatedAt = data.updatedAt;
+  saveFirebaseMeta();
   openPlanId = null;
   expandedCellDates.clear();
   render();
 }
 
-// ponytail: LWW 동기화, 병합 필요해지면 항목 단위 merge로 업그레이드
-async function pushSyncData() {
-  clearTimeout(syncTimer);
-  if (!syncConfig.token || !syncConfig.gistId || syncTokenError) return;
-  if (syncPushing) {
-    syncPushQueued = true;
-    return;
-  }
-
-  syncPushing = true;
-  const payload = syncPayload();
-  const pushedAt = payload.updatedAt;
-  const gistId = syncConfig.gistId;
-  setSyncStatus('동기화 중…');
-  try {
-    await githubRequest(`/gists/${gistId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(payload, null, 2) } } })
-    });
-    if (syncConfig.gistId !== gistId) return;
-    syncConfig.lastSyncedAt = new Date().toISOString();
-    saveSyncConfig();
-    setSyncStatus('동기화됨 · 방금 전');
-  } catch (error) {
-    if (!error.tokenError) {
-      console.warn('Gist 동기화가 보류되었습니다.', error);
-      setSyncStatus('동기화 대기 중');
-    }
-  } finally {
-    syncPushing = false;
-    if (syncPushQueued || syncConfig.updatedAt !== pushedAt) {
-      syncPushQueued = false;
-      scheduleSyncPush();
-    }
-  }
+function markLocalChange() {
+  firebaseMeta.updatedAt = new Date().toISOString();
+  saveFirebaseMeta();
+  window.planCalendarFirebaseSync?.schedulePush();
 }
 
-async function syncNow() {
-  clearTimeout(syncTimer);
-  if (!syncConfig.token || !syncConfig.gistId || syncTokenError) return;
-  setSyncStatus('동기화 중…');
-  try {
-    const gist = await githubRequest(`/gists/${syncConfig.gistId}`);
-    const remote = await readGistData(gist);
-    const remoteTime = isSyncData(remote) ? Date.parse(remote.updatedAt) : 0;
-    const localTime = Date.parse(syncConfig.updatedAt) || 0;
-    if (remoteTime > localTime) {
-      applyRemoteData(remote);
-      setSyncStatus('동기화됨 · 방금 전');
-    } else if (remoteTime === localTime && remoteTime > 0) {
-      syncConfig.lastSyncedAt = new Date().toISOString();
-      saveSyncConfig();
-      setSyncStatus('동기화됨 · 방금 전');
-    } else {
-      await pushSyncData();
-    }
-  } catch (error) {
-    if (!error.tokenError) {
-      console.warn('Gist 동기화를 완료하지 못했습니다.', error);
-      setSyncStatus('동기화 대기 중');
-    }
-  }
-}
-
-async function connectSync() {
-  const input = document.getElementById('syncToken');
-  const token = input.value.trim();
-  if (!token) return input.focus();
-
-  syncConfig.token = token;
-  syncTokenError = false;
-  saveSyncConfig();
-  setSyncStatus('연결 중…');
-  try {
-    const gists = await githubRequest('/gists?per_page=100');
-    let gist = gists.find(item => item.description === GIST_DESCRIPTION && item.public === false);
-    if (!gist) {
-      const payload = syncPayload();
-      gist = await githubRequest('/gists', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          description: GIST_DESCRIPTION,
-          public: false,
-          files: { [GIST_FILE]: { content: JSON.stringify(payload, null, 2) } }
-        })
-      });
-      syncConfig.gistId = gist.id;
-      syncConfig.lastSyncedAt = new Date().toISOString();
-      saveSyncConfig();
-      input.value = '';
-      renderSyncUI();
-      setSyncStatus('동기화됨 · 방금 전');
-      return;
-    }
-
-    syncConfig.gistId = gist.id;
-    saveSyncConfig();
-    input.value = '';
-    renderSyncUI();
-    await syncNow();
-  } catch (error) {
-    if (!error.tokenError) {
-      console.warn('Gist 연결에 실패했습니다.', error);
-      setSyncStatus('연결 실패 — 다시 시도하세요', true);
-    }
-  }
-}
-
-function disconnectSync() {
-  clearTimeout(syncTimer);
-  syncConfig = { updatedAt: syncConfig.updatedAt };
-  syncTokenError = false;
-  saveSyncConfig();
-  document.getElementById('syncToken').value = '';
-  renderSyncUI();
-}
+window.planCalendarFirebaseBridge = {
+  getLocalData: () => firebasePayload(false),
+  ensureLocalTimestamp: () => firebasePayload(true),
+  applyRemoteData: applyFirebaseRemoteData,
+  showFileMode: showFirebaseFileMode,
+  showSignedOut: showFirebaseSignedOut,
+  showSignedIn: showFirebaseSignedIn,
+  setStatus: setFirebaseStatus
+};
 
 function saveData(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
@@ -1361,7 +1345,6 @@ function render() {
   renderSidebar();
   renderEventList();
   renderCalendar();
-  renderSyncUI();
 }
 
 document.getElementById('newPlanBtn').addEventListener('click', addPlan);
@@ -1373,12 +1356,6 @@ document.getElementById('importFile').addEventListener('change', event => {
   if (file) importBackup(file);
   event.target.value = '';
 });
-document.getElementById('syncConnectBtn').addEventListener('click', connectSync);
-document.getElementById('syncToken').addEventListener('keydown', event => {
-  if (event.key === 'Enter') connectSync();
-});
-document.getElementById('syncNowBtn').addEventListener('click', syncNow);
-document.getElementById('syncDisconnectBtn').addEventListener('click', disconnectSync);
 document.getElementById('prevBtn').addEventListener('click', () => {
   viewMonth--;
   if (viewMonth < 0) { viewMonth = 11; viewYear--; }
@@ -1438,7 +1415,7 @@ document.getElementById('eventDialog').addEventListener('click', event => {
 
 render();
 refreshHolidays(viewYear);
-if (syncConfig.token && syncConfig.gistId) syncNow();
+if (location.protocol === 'file:') showFirebaseFileMode(); else showFirebaseSignedOut();
 </script>
 </body>
 </html>
