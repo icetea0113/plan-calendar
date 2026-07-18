@@ -419,7 +419,6 @@
   .item-row:last-child { border-bottom: 0; }
   .item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .item-meta { flex: none; color: var(--muted); font-size: 10px; white-space: nowrap; }
-  .item-date-range { margin-left: 4px; color: #9aa1aa; font-size: 9px; font-weight: 400; }
   .item-row button { width: 24px; height: 24px; }
 
   .add-item-form { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
@@ -1031,7 +1030,14 @@ function itemDateRangeText(startDate, offset, duration, long = false) {
   const longDate = date => `${date.getMonth() + 1}월 ${date.getDate()}일`;
   return long
     ? `→ ${longDate(start)} ~ ${longDate(end)}`
-    : `${shortDate(start)}~${shortDate(end)}`;
+    : `${shortDate(start)} ~ ${shortDate(end)}`;
+}
+
+function dayOffsetBetween(startDate, selectedDate) {
+  const start = parseDateStr(startDate);
+  const selected = parseDateStr(selectedDate);
+  const utc = date => Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((utc(selected) - utc(start)) / 86400000);
 }
 
 function swipeMonthDelta(dx, dy) {
@@ -1088,7 +1094,9 @@ function addItem(planId, form) {
   const titleInput = form.querySelector('.title-in');
   const title = titleInput.value.trim();
   if (!title) return titleInput.focus();
-  const offset = parseInt(form.querySelector('.offset-in').value, 10) || 0;
+  const dateInput = form.querySelector('.item-start-in');
+  if (!dateInput.value) return dateInput.focus();
+  const offset = dayOffsetBetween(plan.startDate, dateInput.value);
   const duration = Math.max(1, parseInt(form.querySelector('.dur-in').value, 10) || 1);
   plan.items = Array.isArray(plan.items) ? plan.items : [];
   plan.items.push({ id: uid(), title, offset, duration });
@@ -1184,19 +1192,19 @@ function renderSidebar() {
           <div class="field">
             <label>시작 날짜</label>
             <input type="date" class="start-in" value="${escapeHtml(plan.startDate || dateKey(new Date()))}">
-            <p class="help-text">변경하면 모든 일정이 오프셋을 유지한 채 함께 이동합니다.</p>
+            <p class="help-text">변경하면 모든 일정이 함께 이동합니다.</p>
           </div>
           <span class="field-label">일정 목록</span>
           <div class="item-list"></div>
           <form class="add-item-form" data-plan="${plan.id}">
             <input type="text" class="title-in" placeholder="일정 제목" maxlength="80" aria-label="일정 제목">
             <label class="item-input-field">
-              <span>시작일로부터 (일)</span>
-              <input type="number" class="offset-in" placeholder="0 = 시작일" value="0">
+              <span>시작 날짜</span>
+              <input type="date" class="item-start-in" value="${escapeHtml(plan.startDate || dateKey(new Date()))}" required>
             </label>
             <label class="item-input-field">
-              <span>기간 (일)</span>
-              <input type="number" class="dur-in" placeholder="예: 4" value="1" min="1">
+              <span>며칠 동안</span>
+              <input type="number" class="dur-in" placeholder="예: 4" value="1" min="1" required>
             </label>
             <div class="item-date-preview" aria-live="polite"></div>
             <button class="btn btn-primary" type="submit">일정 추가</button>
@@ -1230,13 +1238,13 @@ function renderSidebar() {
     const itemForm = body.querySelector('.add-item-form');
     const updateItemPreview = () => {
       itemForm.querySelector('.item-date-preview').textContent = itemDateRangeText(
-        plan.startDate,
-        itemForm.querySelector('.offset-in').value,
+        itemForm.querySelector('.item-start-in').value,
+        0,
         itemForm.querySelector('.dur-in').value,
         true
       );
     };
-    itemForm.querySelector('.offset-in').addEventListener('input', updateItemPreview);
+    itemForm.querySelector('.item-start-in').addEventListener('input', updateItemPreview);
     itemForm.querySelector('.dur-in').addEventListener('input', updateItemPreview);
     updateItemPreview();
     itemForm.addEventListener('submit', event => {
@@ -1250,7 +1258,7 @@ function renderSidebar() {
       row.className = 'item-row';
       row.innerHTML = `
         <span class="item-title">${escapeHtml(item.title)}</span>
-        <span class="item-meta">D+${Number(item.offset) || 0} · ${Math.max(1, Number(item.duration) || 1)}일 <small class="item-date-range">${itemDateRangeText(plan.startDate, item.offset, item.duration)}</small></span>
+        <span class="item-meta">${itemDateRangeText(plan.startDate, item.offset, item.duration)} (${Math.max(1, Number(item.duration) || 1)}일)</span>
         <button class="icon-btn" type="button" title="일정 삭제" aria-label="일정 삭제">×</button>
       `;
       row.querySelector('button').addEventListener('click', () => deleteItem(plan.id, item.id));
@@ -1625,8 +1633,11 @@ document.getElementById('eventDialog').addEventListener('click', event => {
   console.assert(dateKey(addDays(parseDateStr('2026-01-31'), 1)) === '2026-02-01', '월 경계 날짜 계산 실패');
   console.assert(dateKey(addDays(parseDateStr('2024-02-28'), 1)) === '2024-02-29', '윤년 날짜 계산 실패');
   console.assert(dateKey(addDays(parseDateStr('2026-07-10'), 25)) === '2026-08-04', '오프셋 날짜 계산 실패');
+  console.assert(dayOffsetBetween('2026-07-19', '2026-07-22') === 3, '선택 날짜 오프셋 변환 실패');
+  console.assert(dayOffsetBetween('2027-01-02', '2026-12-31') === -2, '이전 날짜 오프셋 변환 실패');
+  console.assert(itemDateRangeText('2026-08-01', 3, 2) === '8/4 ~ 8/5', '계획 시작일 이동 시 일정 이동 실패');
   console.assert(itemDateRangeText('2026-07-19', 0, 4, true) === '→ 7월 19일 ~ 7월 22일', '일정 날짜 미리보기 실패');
-  console.assert(itemDateRangeText('2026-12-31', 1, 2) === '1/1~1/2', '연도 경계 일정 범위 실패');
+  console.assert(itemDateRangeText('2026-12-31', 1, 2) === '1/1 ~ 1/2', '연도 경계 일정 범위 실패');
   console.assert(swipeMonthDelta(-50, 12) === 1 && swipeMonthDelta(70, 10) === -1, '가로 스와이프 방향 판정 실패');
   console.assert(swipeMonthDelta(60, 80) === 0 && swipeMonthDelta(49, 0) === 0, '세로/짧은 스와이프 제외 실패');
   console.assert(HOLIDAYS['2024-02-12'] === '대체공휴일(설날)', '2024 설날 대체공휴일 누락');
