@@ -16,8 +16,8 @@
   <rect width="512" height="512" fill="url(#bg)"/>
   <rect width="512" height="512" fill="url(#glow)"/>
 
-  <!-- 마스커블 안전영역: 글리프 전체가 중앙 66% 이내에 위치 -->
-  <g filter="url(#shadow)">
+  <!-- 마스커블 안전영역: 글리프 전체가 캔버스 중앙 60% 이내에 위치 -->
+  <g filter="url(#shadow)" transform="translate(256 256) scale(.84) translate(-256 -256)">
     <rect x="112" y="151" width="288" height="238" rx="42" fill="#ffffff" fill-opacity=".14" stroke="#ffffff" stroke-width="18"/>
     <path d="M121 224H391" stroke="#ffffff" stroke-width="18"/>
     <path d="M180 128V184M332 128V184" stroke="#ffffff" stroke-width="20" stroke-linecap="round"/>

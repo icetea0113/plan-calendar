@@ -1,14 +1,7 @@
-const CACHE_NAME = 'plan-calendar-v5';
+const CACHE_NAME = 'plan-calendar-v6';
 const APP_SHELL = [
   './',
-  './index.html',
-  './manifest.webmanifest',
-  './icon.svg',
-  './icon-maskable.svg',
-  './icon-192.png',
-  './icon-512.png',
-  './icon-maskable-192.png',
-  './icon-maskable-512.png'
+  './index.html'
 ];
 
 self.addEventListener('install', event => {
@@ -33,6 +26,26 @@ self.addEventListener('activate', event => {
 
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  const isInstallAsset = url.origin === self.location.origin
+    && /\/(?:manifest\.webmanifest|icon(?:-maskable)?(?:-\d+)?\.(?:png|svg))$/.test(url.pathname);
+
+  if (isInstallAsset) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const copy = response.clone();
+          return caches.open(CACHE_NAME)
+            .then(cache => cache.put(event.request, copy))
+            .catch(() => undefined)
+            .then(() => response);
+        })
+        .catch(() => caches.match(event.request).then(cached => cached || Response.error()))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then(cached => (
