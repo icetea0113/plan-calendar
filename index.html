@@ -204,6 +204,39 @@
     letter-spacing: -.012em;
   }
 
+  #appSplash {
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    background: linear-gradient(145deg, #4f6ef7 0%, #3b55d9 100%);
+    color: #fff;
+    opacity: 1;
+    transition: opacity .4s ease;
+  }
+
+  #appSplash.is-hiding { opacity: 0; pointer-events: none; }
+  #appSplash[hidden] { display: none; }
+  .splash-content { display: grid; justify-items: center; transform: translateY(-2vh); }
+  .splash-glyph { width: clamp(96px, 26vw, 116px); height: auto; filter: drop-shadow(0 12px 18px rgba(27,43,125,.26)); }
+  .splash-title { margin-top: 18px; font-size: 20px; font-weight: 700; letter-spacing: .08em; text-shadow: 0 2px 8px rgba(27,43,125,.18); }
+  .splash-loading { display: flex; gap: 6px; margin-top: 26px; }
+  .splash-loading span { width: 5px; height: 5px; border-radius: 50%; background: #fff; opacity: .25; animation: splash-dot 1.2s ease-in-out infinite; }
+  .splash-loading span:nth-child(2) { animation-delay: .18s; }
+  .splash-loading span:nth-child(3) { animation-delay: .36s; }
+
+  @keyframes splash-dot {
+    0%, 100% { opacity: .22; transform: translateY(0); }
+    50% { opacity: .95; transform: translateY(-2px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #appSplash { transition-duration: .01s; }
+    .splash-loading span { animation: none; opacity: .65; }
+  }
+
   button, input, textarea { font: inherit; }
   button { color: inherit; }
 
@@ -696,6 +729,30 @@
 </style>
 </head>
 <body>
+
+<div id="appSplash" role="status" aria-label="계획 캘린더 불러오는 중">
+  <div class="splash-content">
+    <svg class="splash-glyph" viewBox="0 0 512 512" aria-hidden="true">
+      <rect x="104" y="143" width="304" height="252" rx="44" fill="#fff" fill-opacity=".14" stroke="#fff" stroke-width="18"/>
+      <path d="M113 220H399" stroke="#fff" stroke-width="18"/>
+      <path d="M174 119V178M338 119V178" stroke="#fff" stroke-width="20" stroke-linecap="round"/>
+      <circle cx="174" cy="272" r="10" fill="#fff"/>
+      <circle cx="256" cy="272" r="10" fill="#fff"/>
+      <circle cx="338" cy="272" r="10" fill="#fff"/>
+      <circle cx="174" cy="334" r="10" fill="#fff"/>
+      <circle cx="256" cy="334" r="10" fill="#fff"/>
+      <circle cx="338" cy="334" r="15" fill="#ffd166" stroke="#fff" stroke-width="6"/>
+    </svg>
+    <div class="splash-title">계획 캘린더</div>
+    <div class="splash-loading" aria-hidden="true"><span></span><span></span><span></span></div>
+  </div>
+</div>
+<script>
+  window.planCalendarSplashFailsafe = setTimeout(() => {
+    const splash = document.getElementById('appSplash');
+    if (splash) splash.hidden = true;
+  }, 3000);
+</script>
 
 <aside id="sidebar" aria-label="계획 및 일정 목록">
   <div id="sidebarScroll">
@@ -1544,6 +1601,16 @@ function render() {
   renderCalendar();
 }
 
+function dismissAppSplash() {
+  const splash = document.getElementById('appSplash');
+  if (!splash) return;
+  clearTimeout(window.planCalendarSplashFailsafe);
+  setTimeout(() => {
+    splash.classList.add('is-hiding');
+    setTimeout(() => { splash.hidden = true; }, 400);
+  }, 250);
+}
+
 const mobileMedia = matchMedia('(max-width: 768px)');
 function setSidebarOpen(open) {
   const isOpen = mobileMedia.matches && open;
@@ -1649,6 +1716,7 @@ document.getElementById('eventDialog').addEventListener('click', event => {
 })();
 
 render();
+dismissAppSplash();
 refreshHolidays(viewYear);
 if (location.protocol === 'file:') showFirebaseFileMode(); else showFirebaseSignedOut();
 </script>
