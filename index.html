@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="manifest" href="./manifest.webmanifest">
 <meta name="theme-color" content="#4f6ef7">
 <meta name="robots" content="noindex, nofollow">
@@ -442,6 +442,8 @@
     border-bottom: 1px solid var(--line);
   }
 
+  .mobile-menu-btn, .sidebar-backdrop { display: none; }
+
   .month-title { min-width: 0; }
   #cal-header h1 { margin: 0; font-size: 21px; font-weight: 700; line-height: 1.25; letter-spacing: -.03em; }
   .month-caption { margin-top: 2px; color: var(--muted); font-size: 11px; }
@@ -544,6 +546,150 @@
     .holiday-toggle { margin-left: 0; }
     #nav-group { margin-left: auto; }
   }
+
+  @media (max-width: 768px) {
+    body {
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+      display: block;
+    }
+
+    #main {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+
+    #sidebar {
+      position: fixed;
+      z-index: 1001;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: min(86vw, 340px);
+      min-width: 0;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      border-width: 0 1px 0 0;
+      border-radius: 0 14px 14px 0;
+      visibility: hidden;
+      transform: translateX(-105%);
+      transition: transform .24s cubic-bezier(.2,.8,.2,1), visibility 0s linear .24s;
+    }
+
+    body.sidebar-open #sidebar {
+      visibility: visible;
+      transform: translateX(0);
+      transition-delay: 0s;
+    }
+
+    .sidebar-backdrop {
+      position: fixed;
+      z-index: 1000;
+      inset: 0;
+      display: block;
+      border: 0;
+      background: rgba(31,35,40,.38);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .2s ease, visibility 0s linear .2s;
+    }
+
+    body.sidebar-open .sidebar-backdrop {
+      opacity: 1;
+      visibility: visible;
+      transition-delay: 0s;
+    }
+
+    .mobile-menu-btn {
+      width: 40px;
+      height: 40px;
+      flex: none;
+      display: inline-grid;
+      place-items: center;
+      padding: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-sm);
+      background: var(--card);
+      font-size: 20px;
+      cursor: pointer;
+    }
+
+    #cal-header {
+      min-height: 56px;
+      flex-wrap: nowrap;
+      gap: 6px;
+      padding: 8px;
+    }
+
+    .month-title { min-width: 48px; flex: 1; }
+    #cal-header h1 { overflow: hidden; font-size: 17px; text-overflow: ellipsis; white-space: nowrap; }
+    .month-caption, .holiday-toggle-text { display: none; }
+
+    .holiday-toggle {
+      width: 40px;
+      min-width: 40px;
+      min-height: 40px;
+      justify-content: center;
+      margin-left: 0;
+      padding: 6px;
+      border-radius: var(--radius-sm);
+    }
+
+    #nav-group { flex: none; margin-left: 0; }
+    #nav-group button { min-width: 40px; height: 40px; padding: 0 6px; }
+
+    #calendarScroll { padding: 6px; overflow-x: hidden; }
+    #grid {
+      width: 100%;
+      min-width: 0;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      border-radius: 8px;
+    }
+
+    .dow { padding: 7px 1px; font-size: 10px; }
+    .cell { min-width: 0; min-height: 72px; padding: 4px 3px; }
+    .cell-top { min-height: 28px; display: block; margin-bottom: 2px; }
+    .date-num { width: 20px; height: 20px; font-size: 10px; line-height: 20px; }
+    .holiday-label, .anniversary-label { display: block; margin: 0; font-size: 7px; line-height: 10px; }
+    .chip-list { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 3px; }
+    .chip {
+      width: 12px;
+      height: 12px;
+      min-height: 12px;
+      flex: none;
+      padding: 0;
+      border-radius: 50%;
+      background: currentColor !important;
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,.08);
+      font-size: 0;
+    }
+    .chip-title, .event-dot { display: none; }
+    .more-btn { min-height: 18px; padding: 1px 2px; font-size: 9px; line-height: 16px; }
+
+    .btn, .icon-btn, #googleLoginBtn, #googleLogoutBtn, .sidebar-utilities .btn,
+    input:not([type="checkbox"]):not([type="color"]) { min-height: 40px; }
+    .icon-btn { width: 40px; height: 40px; }
+    .color-input { height: 40px; }
+
+    dialog {
+      position: fixed;
+      inset: auto 0 0;
+      width: 100%;
+      max-width: none;
+      max-height: calc(100dvh - env(safe-area-inset-top) - 12px);
+      margin: 0;
+      padding-bottom: env(safe-area-inset-bottom);
+      border-width: 1px 0 0;
+      border-radius: 16px 16px 0 0;
+      overflow-y: auto;
+    }
+
+    .dialog-head { padding: 14px 16px 11px; }
+    #eventForm { padding: 14px 16px 16px; }
+    .dialog-actions .btn { min-width: 64px; }
+  }
 </style>
 </head>
 <body>
@@ -591,9 +737,11 @@
     <input id="importFile" type="file" accept=".json" hidden>
   </div>
 </aside>
+<button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="사이드바 닫기" tabindex="-1"></button>
 
 <main id="main">
   <header id="cal-header">
+    <button id="mobileMenuBtn" class="mobile-menu-btn" type="button" aria-label="계획 및 일정 메뉴 열기" aria-controls="sidebar" aria-expanded="false">☰</button>
     <div class="month-title">
       <h1 id="monthLabel"></h1>
       <div class="month-caption">날짜를 눌러 개별 일정을 추가하세요</div>
@@ -603,7 +751,7 @@
         <input id="holidayToggle" type="checkbox" checked>
         <span class="switch-track" aria-hidden="true"></span>
       </span>
-      공휴일
+      <span class="holiday-toggle-text">공휴일</span>
     </label>
     <div id="nav-group" aria-label="월 이동">
       <button id="prevBtn" type="button" title="이전 달" aria-label="이전 달">‹</button>
@@ -1346,6 +1494,22 @@ function render() {
   renderEventList();
   renderCalendar();
 }
+
+const mobileMedia = matchMedia('(max-width: 768px)');
+function setSidebarOpen(open) {
+  const isOpen = mobileMedia.matches && open;
+  document.body.classList.toggle('sidebar-open', isOpen);
+  document.getElementById('mobileMenuBtn').setAttribute('aria-expanded', String(isOpen));
+}
+
+document.getElementById('mobileMenuBtn').addEventListener('click', () => {
+  setSidebarOpen(!document.body.classList.contains('sidebar-open'));
+});
+document.getElementById('sidebarBackdrop').addEventListener('click', () => setSidebarOpen(false));
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) setSidebarOpen(false);
+});
+mobileMedia.addEventListener('change', () => setSidebarOpen(false));
 
 document.getElementById('newPlanBtn').addEventListener('click', addPlan);
 document.getElementById('newEventBtn').addEventListener('click', () => openEventDialog(dateKey(new Date())));
