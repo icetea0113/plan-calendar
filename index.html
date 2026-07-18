@@ -418,12 +418,15 @@
   .item-row { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 4px; border-bottom: 1px solid var(--line); font-size: 12px; }
   .item-row:last-child { border-bottom: 0; }
   .item-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .item-meta { flex: none; color: var(--muted); font-size: 10px; }
+  .item-meta { flex: none; color: var(--muted); font-size: 10px; white-space: nowrap; }
+  .item-date-range { margin-left: 4px; color: #9aa1aa; font-size: 9px; font-weight: 400; }
   .item-row button { width: 24px; height: 24px; }
 
   .add-item-form { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-  .add-item-form .title-in, .add-item-form button { grid-column: 1 / -1; }
+  .add-item-form .title-in, .add-item-form button, .item-date-preview { grid-column: 1 / -1; }
   .add-item-form input { min-width: 0; font-size: 12px; }
+  .item-input-field { min-width: 0; display: grid; gap: 4px; color: var(--text-subtle); font-size: 10px; font-weight: 650; }
+  .item-date-preview { min-height: 18px; color: var(--muted); font-size: 10px; line-height: 18px; }
 
   #main {
     min-width: 0;
@@ -843,6 +846,7 @@ let openPlanId = null;
 let editingEventId = null;
 let editingEventDate = null;
 const expandedCellDates = new Set();
+let suppressCalendarClick = false;
 
 (function initView() {
   const today = new Date();
@@ -1019,6 +1023,21 @@ function dateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
+function itemDateRangeText(startDate, offset, duration, long = false) {
+  if (!startDate) return '';
+  const start = addDays(parseDateStr(startDate), parseInt(offset, 10) || 0);
+  const end = addDays(start, Math.max(1, parseInt(duration, 10) || 1) - 1);
+  const shortDate = date => `${date.getMonth() + 1}/${date.getDate()}`;
+  const longDate = date => `${date.getMonth() + 1}월 ${date.getDate()}일`;
+  return long
+    ? `→ ${longDate(start)} ~ ${longDate(end)}`
+    : `${shortDate(start)}~${shortDate(end)}`;
+}
+
+function swipeMonthDelta(dx, dy) {
+  return Math.abs(dx) >= 50 && Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 1 : -1) : 0;
+}
+
 function sameDate(a, b) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -1171,8 +1190,15 @@ function renderSidebar() {
           <div class="item-list"></div>
           <form class="add-item-form" data-plan="${plan.id}">
             <input type="text" class="title-in" placeholder="일정 제목" maxlength="80" aria-label="일정 제목">
-            <input type="number" class="offset-in" placeholder="D+일" value="0" aria-label="시작 오프셋">
-            <input type="number" class="dur-in" placeholder="기간" value="1" min="1" aria-label="기간">
+            <label class="item-input-field">
+              <span>시작일로부터 (일)</span>
+              <input type="number" class="offset-in" placeholder="0 = 시작일" value="0">
+            </label>
+            <label class="item-input-field">
+              <span>기간 (일)</span>
+              <input type="number" class="dur-in" placeholder="예: 4" value="1" min="1">
+            </label>
+            <div class="item-date-preview" aria-live="polite"></div>
             <button class="btn btn-primary" type="submit">일정 추가</button>
           </form>
         </div>
@@ -1199,9 +1225,21 @@ function renderSidebar() {
       if (!event.target.value) return;
       plan.startDate = event.target.value;
       savePlans();
-      renderCalendar();
+      render();
     });
-    body.querySelector('.add-item-form').addEventListener('submit', event => {
+    const itemForm = body.querySelector('.add-item-form');
+    const updateItemPreview = () => {
+      itemForm.querySelector('.item-date-preview').textContent = itemDateRangeText(
+        plan.startDate,
+        itemForm.querySelector('.offset-in').value,
+        itemForm.querySelector('.dur-in').value,
+        true
+      );
+    };
+    itemForm.querySelector('.offset-in').addEventListener('input', updateItemPreview);
+    itemForm.querySelector('.dur-in').addEventListener('input', updateItemPreview);
+    updateItemPreview();
+    itemForm.addEventListener('submit', event => {
       event.preventDefault();
       addItem(plan.id, event.currentTarget);
     });
@@ -1212,7 +1250,7 @@ function renderSidebar() {
       row.className = 'item-row';
       row.innerHTML = `
         <span class="item-title">${escapeHtml(item.title)}</span>
-        <span class="item-meta">D+${Number(item.offset) || 0} · ${Math.max(1, Number(item.duration) || 1)}일</span>
+        <span class="item-meta">D+${Number(item.offset) || 0} · ${Math.max(1, Number(item.duration) || 1)}일 <small class="item-date-range">${itemDateRangeText(plan.startDate, item.offset, item.duration)}</small></span>
         <button class="icon-btn" type="button" title="일정 삭제" aria-label="일정 삭제">×</button>
       `;
       row.querySelector('button').addEventListener('click', () => deleteItem(plan.id, item.id));
@@ -1371,7 +1409,9 @@ function renderCalendar() {
     }
     cell.appendChild(chipList);
 
-    const openForCell = () => openEventDialog(key);
+    const openForCell = () => {
+      if (!suppressCalendarClick) openEventDialog(key);
+    };
     cell.addEventListener('click', openForCell);
     cell.addEventListener('keydown', event => {
       if (event.target !== cell) return;
@@ -1512,6 +1552,33 @@ document.addEventListener('keydown', event => {
 });
 mobileMedia.addEventListener('change', () => setSidebarOpen(false));
 
+function moveMonth(amount) {
+  viewMonth += amount;
+  if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+  if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+  expandedCellDates.clear();
+  renderCalendar();
+  refreshHolidays(viewYear);
+}
+
+let calendarTouchStart = null;
+const calendarGrid = document.getElementById('grid');
+calendarGrid.addEventListener('touchstart', event => {
+  if (!mobileMedia.matches || event.touches.length !== 1) return;
+  calendarTouchStart = { x: event.touches[0].clientX, y: event.touches[0].clientY };
+}, { passive: true });
+calendarGrid.addEventListener('touchend', event => {
+  if (!calendarTouchStart || !event.changedTouches.length) return;
+  const touch = event.changedTouches[0];
+  const amount = swipeMonthDelta(touch.clientX - calendarTouchStart.x, touch.clientY - calendarTouchStart.y);
+  calendarTouchStart = null;
+  if (!amount) return;
+  suppressCalendarClick = true;
+  moveMonth(amount);
+  setTimeout(() => { suppressCalendarClick = false; }, 0);
+}, { passive: true });
+calendarGrid.addEventListener('touchcancel', () => { calendarTouchStart = null; }, { passive: true });
+
 document.getElementById('newPlanBtn').addEventListener('click', addPlan);
 document.getElementById('newEventBtn').addEventListener('click', () => openEventDialog(dateKey(new Date())));
 document.getElementById('exportBtn').addEventListener('click', exportBackup);
@@ -1521,20 +1588,8 @@ document.getElementById('importFile').addEventListener('change', event => {
   if (file) importBackup(file);
   event.target.value = '';
 });
-document.getElementById('prevBtn').addEventListener('click', () => {
-  viewMonth--;
-  if (viewMonth < 0) { viewMonth = 11; viewYear--; }
-  expandedCellDates.clear();
-  renderCalendar();
-  refreshHolidays(viewYear);
-});
-document.getElementById('nextBtn').addEventListener('click', () => {
-  viewMonth++;
-  if (viewMonth > 11) { viewMonth = 0; viewYear++; }
-  expandedCellDates.clear();
-  renderCalendar();
-  refreshHolidays(viewYear);
-});
+document.getElementById('prevBtn').addEventListener('click', () => moveMonth(-1));
+document.getElementById('nextBtn').addEventListener('click', () => moveMonth(1));
 document.getElementById('todayBtn').addEventListener('click', () => {
   const today = new Date();
   viewYear = today.getFullYear();
@@ -1570,6 +1625,10 @@ document.getElementById('eventDialog').addEventListener('click', event => {
   console.assert(dateKey(addDays(parseDateStr('2026-01-31'), 1)) === '2026-02-01', '월 경계 날짜 계산 실패');
   console.assert(dateKey(addDays(parseDateStr('2024-02-28'), 1)) === '2024-02-29', '윤년 날짜 계산 실패');
   console.assert(dateKey(addDays(parseDateStr('2026-07-10'), 25)) === '2026-08-04', '오프셋 날짜 계산 실패');
+  console.assert(itemDateRangeText('2026-07-19', 0, 4, true) === '→ 7월 19일 ~ 7월 22일', '일정 날짜 미리보기 실패');
+  console.assert(itemDateRangeText('2026-12-31', 1, 2) === '1/1~1/2', '연도 경계 일정 범위 실패');
+  console.assert(swipeMonthDelta(-50, 12) === 1 && swipeMonthDelta(70, 10) === -1, '가로 스와이프 방향 판정 실패');
+  console.assert(swipeMonthDelta(60, 80) === 0 && swipeMonthDelta(49, 0) === 0, '세로/짧은 스와이프 제외 실패');
   console.assert(HOLIDAYS['2024-02-12'] === '대체공휴일(설날)', '2024 설날 대체공휴일 누락');
   console.assert(HOLIDAYS['2028-10-03'] === '추석 · 개천절', '2028 중복 공휴일 누락');
   console.assert(HOLIDAYS['2032-12-27'] === '대체공휴일(성탄절)', '2032 공휴일 경계 누락');

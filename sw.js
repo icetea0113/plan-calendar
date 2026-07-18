@@ -1,4 +1,4 @@
-const CACHE_NAME = 'plan-calendar-v6';
+const CACHE_NAME = 'plan-calendar-v7';
 const APP_SHELL = [
   './',
   './index.html'
