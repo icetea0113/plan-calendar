@@ -211,30 +211,69 @@
     display: grid;
     place-items: center;
     overflow: hidden;
-    background: linear-gradient(145deg, #4f6ef7 0%, #3b55d9 100%);
+    isolation: isolate;
+    background: linear-gradient(180deg, #0f1530 0%, #1c2650 100%);
     color: #fff;
     opacity: 1;
     transition: opacity .4s ease;
   }
 
+  #appSplash::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    width: 80vw;
+    height: 80vh;
+    background: radial-gradient(ellipse, rgba(79,110,247,.25) 0%, rgba(79,110,247,0) 70%);
+  }
+
   #appSplash.is-hiding { opacity: 0; pointer-events: none; }
   #appSplash[hidden] { display: none; }
-  .splash-content { display: grid; justify-items: center; transform: translateY(-2vh); }
-  .splash-glyph { width: clamp(96px, 26vw, 116px); height: auto; filter: drop-shadow(0 12px 18px rgba(27,43,125,.26)); }
-  .splash-title { margin-top: 18px; font-size: 20px; font-weight: 700; letter-spacing: .08em; text-shadow: 0 2px 8px rgba(27,43,125,.18); }
-  .splash-loading { display: flex; gap: 6px; margin-top: 26px; }
-  .splash-loading span { width: 5px; height: 5px; border-radius: 50%; background: #fff; opacity: .25; animation: splash-dot 1.2s ease-in-out infinite; }
-  .splash-loading span:nth-child(2) { animation-delay: .18s; }
-  .splash-loading span:nth-child(3) { animation-delay: .36s; }
-
-  @keyframes splash-dot {
-    0%, 100% { opacity: .22; transform: translateY(0); }
-    50% { opacity: .95; transform: translateY(-2px); }
+  .splash-content { display: grid; justify-items: center; }
+  .splash-tile {
+    display: grid;
+    width: 112px;
+    height: 112px;
+    place-items: center;
+    border-radius: 28px;
+    background: linear-gradient(145deg, #4f6ef7 0%, #3b55d9 100%);
+    box-shadow: 0 20px 60px rgba(79,110,247,.45);
+    animation: splash-enter .5s cubic-bezier(.2,.8,.2,1) both;
   }
+  .splash-glyph { width: 96px; height: 96px; }
+  .splash-title {
+    margin-top: 28px;
+    color: rgba(255,255,255,.9);
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: .2em;
+    animation: splash-title-in .4s ease .15s both;
+  }
+  .splash-shimmer {
+    position: absolute;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 48px);
+    width: 120px;
+    height: 3px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255,255,255,.15);
+  }
+  .splash-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 -50%;
+    width: 50%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.45), transparent);
+    animation: splash-shimmer 1.2s ease-in-out infinite;
+  }
+
+  @keyframes splash-enter { from { opacity: 0; transform: scale(.92); } to { opacity: 1; transform: scale(1); } }
+  @keyframes splash-title-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes splash-shimmer { to { transform: translateX(300%); } }
 
   @media (prefers-reduced-motion: reduce) {
     #appSplash { transition-duration: .01s; }
-    .splash-loading span { animation: none; opacity: .65; }
+    .splash-tile, .splash-title, .splash-shimmer::after { animation: none; }
   }
 
   button, input, textarea { font: inherit; }
@@ -732,20 +771,22 @@
 
 <div id="appSplash" role="status" aria-label="계획 캘린더 불러오는 중">
   <div class="splash-content">
-    <svg class="splash-glyph" viewBox="0 0 512 512" aria-hidden="true">
-      <rect x="104" y="143" width="304" height="252" rx="44" fill="#fff" fill-opacity=".14" stroke="#fff" stroke-width="18"/>
-      <path d="M113 220H399" stroke="#fff" stroke-width="18"/>
-      <path d="M174 119V178M338 119V178" stroke="#fff" stroke-width="20" stroke-linecap="round"/>
-      <circle cx="174" cy="272" r="10" fill="#fff"/>
-      <circle cx="256" cy="272" r="10" fill="#fff"/>
-      <circle cx="338" cy="272" r="10" fill="#fff"/>
-      <circle cx="174" cy="334" r="10" fill="#fff"/>
-      <circle cx="256" cy="334" r="10" fill="#fff"/>
-      <circle cx="338" cy="334" r="15" fill="#ffd166" stroke="#fff" stroke-width="6"/>
-    </svg>
+    <div class="splash-tile">
+      <svg class="splash-glyph" viewBox="0 0 512 512" aria-hidden="true">
+        <rect x="104" y="143" width="304" height="252" rx="44" fill="#fff" fill-opacity=".14" stroke="#fff" stroke-width="18"/>
+        <path d="M113 220H399" stroke="#fff" stroke-width="18"/>
+        <path d="M174 119V178M338 119V178" stroke="#fff" stroke-width="20" stroke-linecap="round"/>
+        <circle cx="174" cy="272" r="10" fill="#fff"/>
+        <circle cx="256" cy="272" r="10" fill="#fff"/>
+        <circle cx="338" cy="272" r="10" fill="#fff"/>
+        <circle cx="174" cy="334" r="10" fill="#fff"/>
+        <circle cx="256" cy="334" r="10" fill="#fff"/>
+        <circle cx="338" cy="334" r="15" fill="#ffd166" stroke="#fff" stroke-width="6"/>
+      </svg>
+    </div>
     <div class="splash-title">계획 캘린더</div>
-    <div class="splash-loading" aria-hidden="true"><span></span><span></span><span></span></div>
   </div>
+  <div class="splash-shimmer" aria-hidden="true"></div>
 </div>
 <script>
   window.planCalendarSplashFailsafe = setTimeout(() => {
